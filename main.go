@@ -14,7 +14,7 @@ var (
 	// DSN это соединение с базой
 	// вы можете изменить этот на тот который вам нужен
 	// docker run -p 3306:3306 -v $(PWD):/docker-entrypoint-initdb.d -e MYSQL_ROOT_PASSWORD=1234 -e MYSQL_DATABASE=golang -d mysql
-	DSN = "root:kamisama123@tcp(172.17.0.2:3306)/golang?charset=utf8"
+	DSN = "valk:JoaliN@tcp(localhost:3306)/valkyrie?charset=utf8"
 	// DSN = "coursera:5QPbAUufx7@tcp(localhost:3306)/coursera?charset=utf8"
 )
 
