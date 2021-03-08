@@ -14,7 +14,7 @@ type Handler struct {
 
 type Data struct {
 	TableName string
-	Name string
+	Name      string
 }
 
 type Response map[string]interface{}
@@ -40,7 +40,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Delete(w, r)
 	default:
 		response, _ := json.Marshal(&Response{
-		"error": "unknown table",
+			"error": "unknown table",
 		})
 
 		w.WriteHeader(http.StatusNotFound)
@@ -70,6 +70,7 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 
 	for _, tableName := range tableNames {
 		log.Println(tableName)
+
 		query := fmt.Sprintf("SELECT * from %s", tableName)
 		result, err := h.DB.Query(query)
 		if err != nil {
@@ -77,39 +78,82 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var data []Data
+		var output []interface{}
 
-		for result.Next(){
-			d := Data{}
-			if err := result.Scan(&d.Name); err != nil {
-				log.Println(err)
-			}
-			log.Println(d.Name)
-			data = append(data, d)
-
-			columns, err := result.Columns()
+		for result.Next() {
+			columnNames, err := result.Columns()
 			if err != nil {
 				log.Println("COLUMNS:", err)
+				return
 			}
 
-			for _, v := range columns {
-				log.Println(v)
+			data := make([]interface{}, len(columnNames))
+
+			columns, err := result.ColumnTypes()
+			if err != nil {
+				log.Println("ERROR COLUMNS")
+				return
 			}
+
+			for i, v := range columns {
+				columnType := v.DatabaseTypeName()
+				switch columnType {
+				case "TEXT", "VARCHAR":
+					if nullable, _ := v.Nullable(); nullable {
+						data[i] = new(sql.NullString)
+
+						break
+					}
+
+					data[i] = new(string)
+				case "INT":
+					if nullable, _ := v.Nullable(); nullable {
+						data[i] = new(sql.NullInt32)
+
+						break
+					}
+
+					data[i] = new(int)
+				}
+			}
+
+			if err := result.Scan(data...); err != nil {
+				log.Println(err)
+				return
+			}
+
+			output = append(output, data)
 		}
 
 		result.Close()
 
-		log.Println(data)
+		for _, v := range output {
+			for _, val := range v.([]interface{}) {
+				switch val.(type) {
+				case *string:
+					valType := val.(*string)
+					value := *valType
 
+					log.Printf("%#v", value)
+				case *int:
+					valType := val.(*int)
+					value := *valType
+
+					log.Printf("%#v", value)
+				case *sql.NullString:
+					valType := val.(*sql.NullString)
+					value := *valType
+
+					log.Printf("%#v", value)
+				case *sql.NullInt32:
+					valType := val.(*sql.NullInt32)
+					value := *valType
+
+					log.Printf("%#v", value)
+				}
+			}
+		}
 	}
-
-
-
-
-
-
-
-
 }
 
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
@@ -143,8 +187,5 @@ func getTableNames(db *sql.DB) ([]string, error) {
 		tableNames = append(tableNames, data.TableName)
 	}
 
-
 	return tableNames, nil
 }
-
-
