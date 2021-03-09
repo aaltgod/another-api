@@ -9,7 +9,8 @@ import (
 )
 
 type Handler struct {
-	DB *sql.DB
+	DB     *sql.DB
+	Output interface{}
 }
 
 type Data struct {
@@ -79,6 +80,7 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var output []interface{}
+		dataMap := make(map[string]interface{})
 
 		for result.Next() {
 			columnNames, err := result.Columns()
@@ -96,24 +98,29 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 			}
 
 			for i, v := range columns {
+				log.Println(v.Name())
 				columnType := v.DatabaseTypeName()
 				switch columnType {
 				case "TEXT", "VARCHAR":
 					if nullable, _ := v.Nullable(); nullable {
 						data[i] = new(sql.NullString)
+						dataMap[v.Name()] = data[i]
 
 						break
 					}
 
 					data[i] = new(string)
+					dataMap[v.Name()] = data[i]
 				case "INT":
 					if nullable, _ := v.Nullable(); nullable {
 						data[i] = new(sql.NullInt32)
+						dataMap[v.Name()] = data[i]
 
 						break
 					}
 
 					data[i] = new(int)
+					dataMap[v.Name()] = data[i]
 				}
 			}
 
@@ -122,37 +129,93 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			output = append(output, data)
+			output = append(output, dataMap)
 		}
 
 		result.Close()
 
+		log.Println(output...)
+
 		for _, v := range output {
-			for _, val := range v.([]interface{}) {
+			oneSet := v.(map[string]interface{})
+			for key, val := range oneSet {
 				switch val.(type) {
 				case *string:
 					valType := val.(*string)
 					value := *valType
-
-					log.Printf("%#v", value)
+					oneSet[key] = value
 				case *int:
 					valType := val.(*int)
 					value := *valType
-
-					log.Printf("%#v", value)
+					oneSet[key] = value
 				case *sql.NullString:
 					valType := val.(*sql.NullString)
 					value := *valType
+					if value.Valid {
+						oneSet[key] = value.String
 
-					log.Printf("%#v", value)
+						break
+					}
+
+					oneSet[key] = ""
 				case *sql.NullInt32:
 					valType := val.(*sql.NullInt32)
 					value := *valType
+					if value.Valid {
+						oneSet[key] = value.Int32
 
-					log.Printf("%#v", value)
+						break
+					}
+
+					oneSet[key] = value
 				}
 			}
 		}
+
+		log.Println(output...)
+		log.Println(dataMap)
+
+		for k, v := range dataMap {
+			log.Println(k, v)
+
+			log.Printf("%#v", v)
+			switch v.(type) {
+			case *string:
+				valType := v.(*string)
+				value := *valType
+				log.Println(value)
+			}
+		}
+
+		res1 := Response{
+			"response": Response{
+				"records": output,
+			},
+		}
+
+		log.Println(res1)
+
+		res := Response{
+			"response": []string{"ss", "sdsd"},
+		}
+
+		log.Println(res)
+
+		response, err := json.Marshal(&res)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		r, err := json.Marshal(&res1)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		log.Println(string(r), string(response))
+
+		w.Write(response)
 	}
 }
 
