@@ -62,12 +62,7 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 	case "/":
 		tableNames, err := getTableNames(db)
 		if err != nil {
-			response, _ := json.Marshal(&Response{
-				"error": "internal server error",
-			})
-
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write(response)
+			internalServerError(w)
 
 			return
 		}
@@ -78,12 +73,7 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 		if err != nil {
-			response, _ := json.Marshal(&Response{
-				"error": "internal server error",
-			})
-
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write(response)
+			internalServerError(w)
 
 			return
 		}
