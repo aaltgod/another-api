@@ -12,9 +12,9 @@ type Handler struct {
 	Output interface{}
 }
 
-type Data struct {
-	TableName string
-	Name      string
+type DB struct {
+	TableNames []string
+	Name       string
 }
 
 type Response map[string]interface{}
@@ -60,16 +60,9 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 
 	switch r.URL.Path {
 	case "/":
-		tableNames, err := getTableNames(db)
-		if err != nil {
-			internalServerError(w)
-
-			return
-		}
-
 		response, err := json.Marshal(&Response{
 			"response": Response{
-				"tables": tableNames,
+				"tables": TableNames,
 			},
 		})
 		if err != nil {
