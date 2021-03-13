@@ -29,7 +29,7 @@ func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Println(r.URL.Path)
+	log.Println("URL PATH", r.URL.Path)
 
 	switch r.Method {
 	case "POST":
@@ -98,9 +98,9 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 				}
 
 				var output []interface{}
-				dataMap := make(map[string]interface{})
 
 				for result.Next() {
+					dataMap := make(map[string]interface{})
 					columnNames, err := result.Columns()
 					if err != nil {
 						log.Println("COLUMNS:", err)
@@ -116,7 +116,6 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 					}
 
 					for i, v := range columns {
-						log.Println(v.Name())
 						columnType := v.DatabaseTypeName()
 						switch columnType {
 						case "TEXT", "VARCHAR":
@@ -152,8 +151,6 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 
 				result.Close()
 
-				log.Println(output...)
-
 				for _, v := range output {
 					oneSet := v.(map[string]interface{})
 					for key, val := range oneSet {
@@ -175,7 +172,7 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 								break
 							}
 
-							oneSet[key] = ""
+							oneSet[key] = nil
 						case *sql.NullInt32:
 							valType := val.(*sql.NullInt32)
 							value := *valType
@@ -185,23 +182,8 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 								break
 							}
 
-							oneSet[key] = value
+							oneSet[key] = nil
 						}
-					}
-				}
-
-				log.Println(output...)
-				log.Println(dataMap)
-
-				for k, v := range dataMap {
-					log.Println(k, v)
-
-					log.Printf("%#v", v)
-					switch v.(type) {
-					case *string:
-						valType := v.(*string)
-						value := *valType
-						log.Println(value)
 					}
 				}
 
@@ -211,15 +193,11 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 					},
 				}
 
-				log.Println(res1)
-
 				r, err := json.Marshal(&res1)
 				if err != nil {
 					log.Println(err)
 					return
 				}
-
-				log.Println(string(r))
 
 				w.Write(r)
 
