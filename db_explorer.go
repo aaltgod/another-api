@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -57,6 +58,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 	log.Println("READ:", r.URL.Path)
+	log.Println("params", r.URL.Query())
 
 	var db = h.DB
 
@@ -86,9 +88,43 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 		w.Write(response)
 
 	default:
+		var (
+			limit  = 5
+			offset = 0
+		)
+
+		if param, err := strconv.Atoi(r.FormValue("limit")); err == nil {
+			limit = param
+		}
+
+		if param, err := strconv.Atoi(r.FormValue("offset")); err == nil {
+			offset = param
+		}
+
+		log.Println(limit, offset)
+
 		for _, tableName := range tableNames {
 			if tableName == strings.Trim(reqTableName, "/") {
 				log.Println(tableName)
+
+				// body, err := ioutil.ReadAll(r.Body)
+				// if err != nil {
+				// 	log.Println("body", err)
+				// 	internalServerError(w)
+
+				// 	return
+				// }
+
+				// var data interface{}
+
+				// if err := json.Unmarshal(body, &data); err != nil {
+				// 	log.Println("data", body)
+				// 	internalServerError(w)
+
+				// 	return
+				// }
+
+				// log.Println("DATA", data)
 
 				query := fmt.Sprintf("SELECT * from %s", tableName)
 				result, err := h.DB.Query(query)
@@ -199,6 +235,7 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
+				w.WriteHeader(http.StatusOK)
 				w.Write(r)
 
 				return
@@ -250,6 +287,7 @@ func getTableNames(db *sql.DB) ([]string, error) {
 }
 
 func internalServerError(w http.ResponseWriter) {
+
 	response, _ := json.Marshal(&Response{
 		"error": "internal server error",
 	})
