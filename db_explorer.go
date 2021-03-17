@@ -93,12 +93,16 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 			offset = 0
 		)
 
-		if param, err := strconv.Atoi(r.FormValue("limit")); err == nil {
-			limit = param
+		if isExistsParam(r, "limit") {
+			if param, err := strconv.Atoi(r.FormValue("limit")); err == nil {
+				limit = param
+			}
 		}
 
-		if param, err := strconv.Atoi(r.FormValue("offset")); err == nil {
-			offset = param
+		if isExistsParam(r, "offset") {
+			if param, err := strconv.Atoi(r.FormValue("offset")); err == nil {
+				offset = param
+			}
 		}
 
 		log.Println(limit, offset)
@@ -106,25 +110,6 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 		for _, tableName := range tableNames {
 			if tableName == strings.Trim(reqTableName, "/") {
 				log.Println(tableName)
-
-				// body, err := ioutil.ReadAll(r.Body)
-				// if err != nil {
-				// 	log.Println("body", err)
-				// 	internalServerError(w)
-
-				// 	return
-				// }
-
-				// var data interface{}
-
-				// if err := json.Unmarshal(body, &data); err != nil {
-				// 	log.Println("data", body)
-				// 	internalServerError(w)
-
-				// 	return
-				// }
-
-				// log.Println("DATA", data)
 
 				query := fmt.Sprintf("SELECT * from %s", tableName)
 				result, err := h.DB.Query(query)
@@ -296,4 +281,14 @@ func internalServerError(w http.ResponseWriter) {
 	w.Write(response)
 
 	return
+}
+
+func isExistsParam(r *http.Request, key string) bool {
+
+	param := r.FormValue(key)
+	if len(param) > 0 {
+		return true
+	}
+
+	return false
 }
