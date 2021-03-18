@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -87,8 +88,14 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 		w.Write(response)
 
 	default:
+		reTableName := regexp.MustCompile(`/[\w]*[/?]?`).FindString(reqTableName)
+		reWithID := regexp.MustCompile(`/[\w]*/[\d]*`).FindString(reqTableName)
+		reqTableName = strings.Trim(reTableName, "/")
+		id := strings.Split(reWithID, "/")
+		log.Println("ID:", id, len(id))
+
 		for _, tableName := range tableNames {
-			if tableName == strings.Trim(reqTableName, "/") {
+			if tableName == reqTableName {
 				query := fmt.Sprintf("SELECT * FROM %s ", tableName)
 
 				if isExistsParam(r, "offset") {
@@ -116,6 +123,12 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 					limit := param
 					query += fmt.Sprintf("LIMIT %d", limit)
 				}
+
+				if len(id) > 1 {
+					query += fmt.Sprintf("WHERE id = %s", id[2])
+				}
+
+				log.Println(query)
 
 				result, err := h.DB.Query(query)
 				if err != nil {
