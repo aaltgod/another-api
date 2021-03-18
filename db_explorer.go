@@ -58,7 +58,6 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 	log.Println("READ:", r.URL.Path)
-	log.Println("params", r.URL.Query())
 
 	var db = h.DB
 
@@ -88,30 +87,36 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 		w.Write(response)
 
 	default:
-		var (
-			limit  = 5
-			offset = 0
-		)
-
-		if isExistsParam(r, "limit") {
-			if param, err := strconv.Atoi(r.FormValue("limit")); err == nil {
-				limit = param
-			}
-		}
-
-		if isExistsParam(r, "offset") {
-			if param, err := strconv.Atoi(r.FormValue("offset")); err == nil {
-				offset = param
-			}
-		}
-
-		log.Println(limit, offset)
-
 		for _, tableName := range tableNames {
 			if tableName == strings.Trim(reqTableName, "/") {
-				log.Println(tableName)
+				query := fmt.Sprintf("SELECT * FROM %s ", tableName)
 
-				query := fmt.Sprintf("SELECT * from %s", tableName)
+				if isExistsParam(r, "offset") {
+					param, err := strconv.Atoi(r.FormValue("offset"))
+					if err != nil {
+						offset := 0
+						query += fmt.Sprintf("WHERE id > %d ", offset)
+
+						break
+					}
+
+					offset := param
+					query += fmt.Sprintf("WHERE id > %d ", offset)
+				}
+
+				if isExistsParam(r, "limit") {
+					param, err := strconv.Atoi(r.FormValue("limit"))
+					if err != nil {
+						limit := 5
+						query += fmt.Sprintf("LIMIT %d", limit)
+
+						break
+					}
+
+					limit := param
+					query += fmt.Sprintf("LIMIT %d", limit)
+				}
+
 				result, err := h.DB.Query(query)
 				if err != nil {
 					log.Println("RESULT:", err)
@@ -208,20 +213,18 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 
-				res1 := Response{
+				response, err := json.Marshal(&Response{
 					"response": Response{
 						"records": output,
 					},
-				}
-
-				r, err := json.Marshal(&res1)
+				})
 				if err != nil {
 					log.Println(err)
 					return
 				}
 
 				w.WriteHeader(http.StatusOK)
-				w.Write(r)
+				w.Write(response)
 
 				return
 			}
