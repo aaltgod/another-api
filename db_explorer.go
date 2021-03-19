@@ -64,6 +64,7 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 
 	tableNames, err := getTableNames(db)
 	if err != nil {
+		log.Println(err)
 		internalServerError(w)
 
 		return
@@ -79,6 +80,7 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 		if err != nil {
+			log.Println(err)
 			internalServerError(w)
 
 			return
@@ -92,155 +94,107 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 		reWithID := regexp.MustCompile(`/[\w]*/[\d]*`).FindString(reqTableName)
 		reqTableName = strings.Trim(reTableName, "/")
 		id := strings.Split(reWithID, "/")
-		log.Println("ID:", id, len(id))
 
 		for _, tableName := range tableNames {
 			if tableName == reqTableName {
 				query := fmt.Sprintf("SELECT * FROM %s ", tableName)
 
-				if isExistsParam(r, "offset") {
-					param, err := strconv.Atoi(r.FormValue("offset"))
-					if err != nil {
-						offset := 0
-						query += fmt.Sprintf("WHERE id > %d ", offset)
-
-						break
-					}
-
-					offset := param
-					query += fmt.Sprintf("WHERE id > %d ", offset)
-				}
-
-				if isExistsParam(r, "limit") {
-					param, err := strconv.Atoi(r.FormValue("limit"))
-					if err != nil {
-						limit := 5
-						query += fmt.Sprintf("LIMIT %d", limit)
-
-						break
-					}
-
-					limit := param
-					query += fmt.Sprintf("LIMIT %d", limit)
-				}
-
 				if len(id) > 1 {
 					query += fmt.Sprintf("WHERE id = %s", id[2])
-				}
 
-				log.Println(query)
-
-				result, err := h.DB.Query(query)
-				if err != nil {
-					log.Println("RESULT:", err)
-					return
-				}
-
-				var output []interface{}
-
-				for result.Next() {
-					dataMap := make(map[string]interface{})
-					columnNames, err := result.Columns()
+					data, err := getDataFromDB(h, query)
 					if err != nil {
-						log.Println("COLUMNS:", err)
-						return
-					}
-
-					data := make([]interface{}, len(columnNames))
-
-					columns, err := result.ColumnTypes()
-					if err != nil {
-						log.Println("ERROR COLUMNS")
-						return
-					}
-
-					for i, v := range columns {
-						columnType := v.DatabaseTypeName()
-						switch columnType {
-						case "TEXT", "VARCHAR":
-							if nullable, _ := v.Nullable(); nullable {
-								data[i] = new(sql.NullString)
-								dataMap[v.Name()] = data[i]
-
-								break
-							}
-
-							data[i] = new(string)
-							dataMap[v.Name()] = data[i]
-						case "INT":
-							if nullable, _ := v.Nullable(); nullable {
-								data[i] = new(sql.NullInt32)
-								dataMap[v.Name()] = data[i]
-
-								break
-							}
-
-							data[i] = new(int)
-							dataMap[v.Name()] = data[i]
-						}
-					}
-
-					if err := result.Scan(data...); err != nil {
 						log.Println(err)
+						internalServerError(w)
+
 						return
 					}
 
-					output = append(output, dataMap)
-				}
+					if len(data.([]interface{})) > 0 {
+						for _, data := range data.([]interface{}) {
+							response, err := json.Marshal(&Response{
+								"response": Response{
+									"record": data,
+								},
+							})
+							if err != nil {
+								log.Println(err)
+								internalServerError(w)
 
-				result.Close()
-
-				for _, v := range output {
-					oneSet := v.(map[string]interface{})
-					for key, val := range oneSet {
-						switch val.(type) {
-						case *string:
-							valType := val.(*string)
-							value := *valType
-							oneSet[key] = value
-						case *int:
-							valType := val.(*int)
-							value := *valType
-							oneSet[key] = value
-						case *sql.NullString:
-							valType := val.(*sql.NullString)
-							value := *valType
-							if value.Valid {
-								oneSet[key] = value.String
-
-								break
+								return
 							}
 
-							oneSet[key] = nil
-						case *sql.NullInt32:
-							valType := val.(*sql.NullInt32)
-							value := *valType
-							if value.Valid {
-								oneSet[key] = value.Int32
-
-								break
-							}
-
-							oneSet[key] = nil
+							w.WriteHeader(http.StatusOK)
+							w.Write(response)
 						}
-					}
-				}
 
-				response, err := json.Marshal(&Response{
-					"response": Response{
-						"records": output,
-					},
-				})
-				if err != nil {
-					log.Println(err)
+						return
+					}
+
+					response, _ := json.Marshal(&Response{
+						"error": "record not found",
+					})
+
+					w.WriteHeader(http.StatusNotFound)
+					w.Write(response)
+
+					return
+
+				} else {
+					if isExistsParam(r, "offset") {
+						param, err := strconv.Atoi(r.FormValue("offset"))
+						if err != nil {
+							offset := 0
+							query += fmt.Sprintf("WHERE id > %d ", offset)
+
+							break
+						}
+
+						offset := param
+						query += fmt.Sprintf("WHERE id > %d ", offset)
+					}
+
+					if isExistsParam(r, "limit") {
+						param, err := strconv.Atoi(r.FormValue("limit"))
+						if err != nil {
+							limit := 5
+							query += fmt.Sprintf("LIMIT %d", limit)
+
+							break
+						}
+
+						limit := param
+						query += fmt.Sprintf("LIMIT %d", limit)
+					}
+
+					data, err := getDataFromDB(h, query)
+					if err != nil {
+						log.Println(err)
+						internalServerError(w)
+
+						return
+					}
+
+					response, err := json.Marshal(&Response{
+						"response": Response{
+							"records": data,
+						},
+					})
+					if err != nil {
+						log.Println(err)
+						internalServerError(w)
+
+						return
+					}
+
+					w.WriteHeader(http.StatusOK)
+					w.Write(response)
+
 					return
 				}
 
-				w.WriteHeader(http.StatusOK)
-				w.Write(response)
-
-				return
 			}
+
 		}
 
 		response, _ := json.Marshal(&Response{
@@ -307,4 +261,105 @@ func isExistsParam(r *http.Request, key string) bool {
 	}
 
 	return false
+}
+
+func getDataFromDB(h *Handler, query string) (interface{}, error) {
+
+	result, err := h.DB.Query(query)
+	if err != nil {
+		log.Println("RESULT:", err)
+		return "", err
+	}
+
+	var output []interface{}
+
+	for result.Next() {
+		dataMap := make(map[string]interface{})
+		columnNames, err := result.Columns()
+		if err != nil {
+			log.Println("COLUMNS:", err)
+			return "", err
+		}
+
+		data := make([]interface{}, len(columnNames))
+
+		columns, err := result.ColumnTypes()
+		if err != nil {
+			log.Println("ERROR COLUMNS")
+			return "", err
+		}
+
+		for i, v := range columns {
+			columnType := v.DatabaseTypeName()
+			switch columnType {
+			case "TEXT", "VARCHAR":
+				if nullable, _ := v.Nullable(); nullable {
+					data[i] = new(sql.NullString)
+					dataMap[v.Name()] = data[i]
+
+					break
+				}
+
+				data[i] = new(string)
+				dataMap[v.Name()] = data[i]
+			case "INT":
+				if nullable, _ := v.Nullable(); nullable {
+					data[i] = new(sql.NullInt32)
+					dataMap[v.Name()] = data[i]
+
+					break
+				}
+
+				data[i] = new(int)
+				dataMap[v.Name()] = data[i]
+			}
+		}
+
+		if err := result.Scan(data...); err != nil {
+			log.Println(err)
+			return "", err
+		}
+
+		output = append(output, dataMap)
+	}
+
+	result.Close()
+
+	for _, v := range output {
+		oneSet := v.(map[string]interface{})
+		for key, val := range oneSet {
+			switch val.(type) {
+			case *string:
+				valType := val.(*string)
+				value := *valType
+				oneSet[key] = value
+			case *int:
+				valType := val.(*int)
+				value := *valType
+				oneSet[key] = value
+			case *sql.NullString:
+				valType := val.(*sql.NullString)
+				value := *valType
+				if value.Valid {
+					oneSet[key] = value.String
+
+					break
+				}
+
+				oneSet[key] = nil
+			case *sql.NullInt32:
+				valType := val.(*sql.NullInt32)
+				value := *valType
+				if value.Valid {
+					oneSet[key] = value.Int32
+
+					break
+				}
+
+				oneSet[key] = nil
+			}
+		}
+	}
+
+	return output, nil
 }
