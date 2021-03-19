@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"regexp"
@@ -34,12 +35,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Println("URL PATH", r.URL.Path)
 
 	switch r.Method {
-	case "POST":
-		h.Create(w, r)
 	case "GET":
 		h.Read(w, r)
-	case "PUT":
-		h.Update(w, r)
+	case "PUT", "POST":
+		h.CreateAndUpdate(w, r)
 	case "DELETE":
 		h.Delete(w, r)
 	default:
@@ -50,11 +49,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		w.Write(response)
 	}
-}
-
-func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	log.Println("CREATE:", r.URL.Path)
-
 }
 
 func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +95,6 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 
 				if len(id) > 1 {
 					query += fmt.Sprintf("WHERE id = %s", id[2])
-
 					data, err := getDataFromDB(h, query)
 					if err != nil {
 						log.Println(err)
@@ -207,8 +200,27 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 	log.Println("UPDATE:", r.URL.Path)
+
+	var data interface{}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println(err)
+		internalServerError(w)
+
+		return
+	}
+
+	if err = json.Unmarshal(body, &data); err != nil {
+		log.Println(err)
+		internalServerError(w)
+
+		return
+	}
+
+	log.Println(data)
 
 }
 
@@ -360,6 +372,5 @@ func getDataFromDB(h *Handler, query string) (interface{}, error) {
 			}
 		}
 	}
-
 	return output, nil
 }
