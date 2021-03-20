@@ -22,6 +22,22 @@ type DB struct {
 	Name      string
 }
 
+type User struct {
+	UserID   int `json:"user_id,string"`
+	Login    string
+	Password string
+	Email    string
+	Info     string
+	Updated  string
+}
+
+type Item struct {
+	ID          int `json:"id,int"`
+	Title       string
+	Description string
+	Updated     string
+}
+
 type Response map[string]interface{}
 
 func NewDbExplorer(db *sql.DB) (http.Handler, error) {
@@ -201,11 +217,15 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
-	log.Println("UPDATE:", r.URL.Path)
+	log.Println("CREATE and UPDATE:", r.URL.Path)
 
-	var data interface{}
+	var (
+		data    interface{}
+		db      = h.DB
+		reqPath = r.URL.Path
+	)
 
-	body, err := ioutil.ReadAll(r.Body)
+	tableNames, err := getTableNames(db)
 	if err != nil {
 		log.Println(err)
 		internalServerError(w)
@@ -213,15 +233,179 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = json.Unmarshal(body, &data); err != nil {
-		log.Println(err)
-		internalServerError(w)
+	log.Println(tableNames)
 
-		return
+	reTableName := regexp.MustCompile(`/[\w]*[/?]?`).FindString(reqPath)
+	reWithID := regexp.MustCompile(`/[\w]*/[\d]*`).FindString(reqPath)
+	reqTableName := strings.Trim(reTableName, "/")
+	id := strings.Split(reWithID, "/")
+
+	log.Println("ID", reWithID, id)
+
+	for _, tableName := range tableNames {
+		if tableName == reqTableName {
+			log.Println("OK", tableName)
+
+			body, err := ioutil.ReadAll(r.Body)
+			if err != nil {
+				log.Println(err)
+				internalServerError(w)
+
+				return
+			}
+
+			item := &Item{}
+
+			if err = json.Unmarshal(body, &item); err != nil {
+				log.Println(err)
+				internalServerError(w)
+
+				return
+			}
+
+			log.Println("ITEM", item)
+
+			if err = json.Unmarshal(body, &data); err != nil {
+				log.Println(err)
+				internalServerError(w)
+
+				return
+			}
+
+			log.Println(data)
+
+			query := fmt.Sprintf("SELECT * FROM %s", tableName)
+			columnsMap := make(map[string]interface{})
+
+			result, err := db.Query(query)
+
+			for result.Next() {
+				columns, err := result.ColumnTypes()
+				if err != nil {
+					log.Println(err)
+					internalServerError(w)
+
+					return
+				}
+
+				log.Println(columns)
+
+				for _, v := range columns {
+					columnType := v.DatabaseTypeName()
+					switch columnType {
+					case "TEXT", "VARCHAR":
+						columnsMap[v.Name()] = new(string)
+					case "INT":
+						columnsMap[v.Name()] = new(int32)
+					}
+
+					log.Println(columnsMap[v.Name()])
+				}
+
+			}
+
+			result.Close()
+
+			query = fmt.Sprintf("INSERT INTO %s (", tableName)
+			queryValues := fmt.Sprintf("VALUES (")
+
+			for k, v := range data.(map[string]interface{}) {
+				log.Printf("%T ", v)
+
+				switch v.(type) {
+				case float64:
+					field := int32(v.(float64))
+					fieldFromDB := columnsMap[k]
+
+					switch fieldFromDB.(type) {
+					case *int32:
+						log.Println("TYPES OK")
+
+						query += fmt.Sprintf("%s,", k)
+						queryValues += fmt.Sprintf("%d,", field)
+					default:
+						log.Println("TYPES NOT OK")
+
+						response, _ := json.Marshal(&Response{
+							"error": "field " + k + " have invalid type",
+						})
+
+						w.WriteHeader(http.StatusBadRequest)
+						w.Write(response)
+
+						return
+					}
+
+					log.Printf("%T", field)
+				case string:
+					field := v.(string)
+					fieldFromDB := columnsMap[k]
+
+					switch fieldFromDB.(type) {
+					case *string:
+						log.Println("TYPES OK")
+
+						if field == "" {
+							field = "''"
+						}
+
+						query += fmt.Sprintf("%s,", k)
+						queryValues += fmt.Sprintf("%s,", field)
+					default:
+						log.Println("TYPES NOT OK")
+
+						response, _ := json.Marshal(&Response{
+							"error": "field " + k + " have invalid type",
+						})
+
+						w.WriteHeader(http.StatusBadRequest)
+						w.Write(response)
+
+						return
+					}
+					log.Printf("%T", field)
+				default:
+					log.Println("default", v)
+				}
+
+			}
+
+			// for k, v := range data.(map[string]interface{}) {
+			// 	log.Println("K", k, "V", v)
+			// 	query += fmt.Sprintf("%s, ", k)
+			// }
+
+			// query += ") VALUES ("
+
+			// for k, v := range data.(map[string]interface{}) {
+			// 	log.Println("K", k, "V", v)
+			// 	query += fmt.Sprintf("%v, ", v)
+			// }
+
+			query += ") " + queryValues + ")"
+
+			// result, err = db.Exec(query)
+			// if err != nil {
+			// 	log.Println(err)
+			// }
+
+			// affected, err := result.Rows
+			log.Println(query)
+
+			log.Println(columnsMap, data)
+
+			return
+		}
 	}
 
-	log.Println(data)
+	// log.Println(tableNames, reqTableName)
 
+	response, _ := json.Marshal(&Response{
+		"error": "unknown table",
+	})
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(response)
 }
 
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
