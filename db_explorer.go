@@ -22,22 +22,6 @@ type DB struct {
 	Name      string
 }
 
-type User struct {
-	UserID   int `json:"user_id,string"`
-	Login    string
-	Password string
-	Email    string
-	Info     string
-	Updated  string
-}
-
-type Item struct {
-	ID          int `json:"id,int"`
-	Title       string
-	Description string
-	Updated     string
-}
-
 type Response map[string]interface{}
 
 func NewDbExplorer(db *sql.DB) (http.Handler, error) {
@@ -216,6 +200,7 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// Together because of tests
 func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 	log.Println("CREATE and UPDATE:", r.URL.Path)
 
@@ -309,6 +294,13 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 			query = fmt.Sprintf("INSERT INTO %s (", tableName)
 			queryValues := fmt.Sprintf("VALUES (")
 
+			var Fields struct {
+				fields map[string]interface{}
+			}
+
+			Fields.fields = make(map[string]interface{})
+			f := Fields.fields
+
 			for k, v := range data.(map[string]interface{}) {
 				log.Printf("%T ", v)
 
@@ -320,6 +312,8 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 					switch fieldFromDB.(type) {
 					case *int32:
 						log.Println("TYPES OK")
+
+						f[k] = field
 
 						query += fmt.Sprintf("%s,", k)
 						queryValues += fmt.Sprintf("%d,", field)
@@ -348,6 +342,8 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 						if field == "" {
 							field = "''"
 						}
+
+						f[k] = field
 
 						query += fmt.Sprintf("%s,", k)
 						queryValues += fmt.Sprintf("%s,", field)
@@ -391,6 +387,8 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 			// affected, err := result.Rows
 			log.Println(query)
+
+			log.Println("\tf", f)
 
 			log.Println(columnsMap, data)
 
