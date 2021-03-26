@@ -218,8 +218,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println(tableNames)
-
 	reTableName := regexp.MustCompile(`/[\w]*[/?]?`).FindString(reqPath)
 	reWithID := regexp.MustCompile(`/[\w]*/[\d]*`).FindString(reqPath)
 	reqTableName := strings.Trim(reTableName, "/")
@@ -229,8 +227,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 	for _, tableName := range tableNames {
 		if tableName == reqTableName {
-			log.Println("OK", tableName)
-
 			body, err := ioutil.ReadAll(r.Body)
 			if err != nil {
 				log.Println(err)
@@ -246,8 +242,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			log.Println(data)
-
 			query := fmt.Sprintf("SELECT * FROM %s", tableName)
 			columnsMap := make(map[string]interface{})
 
@@ -262,8 +256,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
-				log.Println(columns)
-
 				for _, v := range columns {
 					columnType := v.DatabaseTypeName()
 					switch columnType {
@@ -272,8 +264,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 					case "INT":
 						columnsMap[v.Name()] = new(int32)
 					}
-
-					log.Println(columnsMap[v.Name()])
 				}
 
 			}
@@ -288,8 +278,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 			f := Fields.fields
 
 			for k, v := range data.(map[string]interface{}) {
-				log.Printf("%T ", v)
-
 				switch v.(type) {
 				// case float64:
 				// 	field := int32(v.(float64))
@@ -320,8 +308,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 					switch fieldFromDB.(type) {
 					case *string:
-						log.Println("TYPES OK")
-
 						if field == "" {
 							field = "''"
 							f[k] = field
@@ -331,8 +317,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 						f[k] = "'" + field + "'"
 					default:
-						log.Println("TYPES NOT OK")
-
 						response, _ := json.Marshal(&Response{
 							"error": "field " + k + " have invalid type",
 						})
@@ -342,7 +326,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 						return
 					}
-					log.Printf("%T", field)
 				default:
 					log.Println("default", v)
 				}
