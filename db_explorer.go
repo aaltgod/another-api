@@ -219,11 +219,8 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reTableName := regexp.MustCompile(`/[\w]*[/?]?`).FindString(reqPath)
-	reWithID := regexp.MustCompile(`/[\w]*/[\d]*`).FindString(reqPath)
+	reWithID := regexp.MustCompile(`/[\w]*/[\d].*`).FindString(reqPath)
 	reqTableName := strings.Trim(reTableName, "/")
-	id := strings.Split(reWithID, "/")
-
-	log.Println("ID", reWithID, id)
 
 	for _, tableName := range tableNames {
 		if tableName == reqTableName {
@@ -246,6 +243,8 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 			columnsMap := make(map[string]interface{})
 
 			result, err := db.Query(query)
+
+			log.Println(data)
 
 			for result.Next() {
 				columns, err := result.ColumnTypes()
@@ -276,6 +275,103 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 			Fields.fields = make(map[string]interface{})
 			f := Fields.fields
+
+			exists, err := regexp.MatchString(`/[\d].*`, reWithID)
+			if err != nil {
+				log.Println(err)
+				internalServerError(w)
+
+				return
+			}
+
+			if exists {
+				log.Println("WWWWWWWWWWWWWWWWwа")
+				ID := strings.Split(reWithID, "/")[2]
+				log.Println("\t\t\t ", ID)
+				for k, v := range data.(map[string]interface{}) {
+					switch v.(type) {
+					case float64:
+						response, _ := json.Marshal(&Response{
+							"error": "field " + k + " have invalid type",
+						})
+
+						w.WriteHeader(http.StatusBadRequest)
+						w.Write(response)
+
+						return
+					case string:
+						field := v.(string)
+						fieldFromDB := columnsMap[k]
+
+						switch fieldFromDB.(type) {
+						case *string:
+							if field == "" {
+								field = "''"
+								f[k] = field
+
+								break
+							}
+
+							f[k] = "'" + field + "'"
+						default:
+							response, _ := json.Marshal(&Response{
+								"error": "field " + k + " have invalid type",
+							})
+
+							w.WriteHeader(http.StatusBadRequest)
+							w.Write(response)
+
+							return
+						}
+					case nil:
+						f[k] = "NULL"
+					default:
+						log.Println("default", v, k)
+						log.Printf("%T", k)
+					}
+
+				}
+
+				var (
+					values, fs []string
+				)
+
+				for k, v := range f {
+					fs = append(fs, k)
+					values = append(values, fmt.Sprintf("%v", v))
+				}
+
+				query = "UPDATE items set " + strings.Join(fs, "") + "=" + strings.Join(values, "") + " WHERE id=" + ID
+				log.Println(query)
+
+				res, err := db.Exec(query)
+				if err != nil {
+					log.Println(err)
+					internalServerError(w)
+
+					return
+				}
+
+				affected, err := res.RowsAffected()
+				if err != nil {
+					log.Println(err)
+					internalServerError(w)
+
+					return
+				}
+
+				response, _ := json.Marshal(&Response{
+					"response": Response{
+						"updated": affected,
+					},
+				})
+
+				w.WriteHeader(http.StatusOK)
+				w.Write(response)
+
+				log.Println(affected)
+				return
+			}
 
 			for k, v := range data.(map[string]interface{}) {
 				switch v.(type) {
@@ -341,7 +437,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 				values = append(values, fmt.Sprintf("%v", v))
 			}
 
-			query = "INSERT INTO items (" + strings.Join(fs, ",") + ") VALUES (" + strings.Join(values, ",") + ")"
+			query = "INSERT INTO items (" + strings.Join(fs, ", ") + ") VALUES (" + strings.Join(values, ", ") + ")"
 			log.Println(query)
 
 			res, err := db.Exec(query)
@@ -372,6 +468,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 			log.Println(affected)
 			return
 		}
+
 	}
 
 	response, _ := json.Marshal(&Response{
