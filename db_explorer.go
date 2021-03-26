@@ -239,17 +239,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			item := &Item{}
-
-			if err = json.Unmarshal(body, &item); err != nil {
-				log.Println(err)
-				internalServerError(w)
-
-				return
-			}
-
-			log.Println("ITEM", item)
-
 			if err = json.Unmarshal(body, &data); err != nil {
 				log.Println(err)
 				internalServerError(w)
@@ -291,9 +280,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 			result.Close()
 
-			query = fmt.Sprintf("INSERT INTO %s (", tableName)
-			queryValues := fmt.Sprintf("VALUES (")
-
 			var Fields struct {
 				fields map[string]interface{}
 			}
@@ -305,32 +291,29 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 				log.Printf("%T ", v)
 
 				switch v.(type) {
-				case float64:
-					field := int32(v.(float64))
-					fieldFromDB := columnsMap[k]
+				// case float64:
+				// 	field := int32(v.(float64))
+				// 	fieldFromDB := columnsMap[k]
 
-					switch fieldFromDB.(type) {
-					case *int32:
-						log.Println("TYPES OK")
+				// 	switch fieldFromDB.(type) {
+				// 	case *int32:
+				// 		log.Println("TYPES OK")
 
-						f[k] = field
+				// 		f[k] = field
+				// 	default:
+				// 		log.Println("TYPES NOT OK")
 
-						query += fmt.Sprintf("%s,", k)
-						queryValues += fmt.Sprintf("%d,", field)
-					default:
-						log.Println("TYPES NOT OK")
+				// 		response, _ := json.Marshal(&Response{
+				// 			"error": "field " + k + " have invalid type",
+				// 		})
 
-						response, _ := json.Marshal(&Response{
-							"error": "field " + k + " have invalid type",
-						})
+				// 		w.WriteHeader(http.StatusBadRequest)
+				// 		w.Write(response)
 
-						w.WriteHeader(http.StatusBadRequest)
-						w.Write(response)
+				// 		return
+				// 	}
 
-						return
-					}
-
-					log.Printf("%T", field)
+				// 	log.Printf("%T", field)
 				case string:
 					field := v.(string)
 					fieldFromDB := columnsMap[k]
@@ -341,12 +324,12 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 						if field == "" {
 							field = "''"
+							f[k] = field
+
+							break
 						}
 
-						f[k] = field
-
-						query += fmt.Sprintf("%s,", k)
-						queryValues += fmt.Sprintf("%s,", field)
+						f[k] = "'" + field + "'"
 					default:
 						log.Println("TYPES NOT OK")
 
@@ -366,37 +349,47 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 			}
 
-			// for k, v := range data.(map[string]interface{}) {
-			// 	log.Println("K", k, "V", v)
-			// 	query += fmt.Sprintf("%s, ", k)
-			// }
+			var (
+				values, fs []string
+			)
 
-			// query += ") VALUES ("
+			for k, v := range f {
+				fs = append(fs, k)
+				values = append(values, fmt.Sprintf("%v", v))
+			}
 
-			// for k, v := range data.(map[string]interface{}) {
-			// 	log.Println("K", k, "V", v)
-			// 	query += fmt.Sprintf("%v, ", v)
-			// }
-
-			query += ") " + queryValues + ")"
-
-			// result, err = db.Exec(query)
-			// if err != nil {
-			// 	log.Println(err)
-			// }
-
-			// affected, err := result.Rows
+			query = "INSERT INTO items (" + strings.Join(fs, ",") + ") VALUES (" + strings.Join(values, ",") + ")"
 			log.Println(query)
 
-			log.Println("\tf", f)
+			res, err := db.Exec(query)
+			if err != nil {
+				log.Println(err)
+				internalServerError(w)
 
-			log.Println(columnsMap, data)
+				return
+			}
 
+			affected, err := res.LastInsertId()
+			if err != nil {
+				log.Println(err)
+				internalServerError(w)
+
+				return
+			}
+
+			response, _ := json.Marshal(&Response{
+				"response": Response{
+					"id": affected,
+				},
+			})
+
+			w.WriteHeader(http.StatusOK)
+			w.Write(response)
+
+			log.Println(affected)
 			return
 		}
 	}
-
-	// log.Println(tableNames, reqTableName)
 
 	response, _ := json.Marshal(&Response{
 		"error": "unknown table",
