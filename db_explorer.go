@@ -244,8 +244,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 			result, err := db.Query(query)
 
-			log.Println(data)
-
 			for result.Next() {
 				columns, err := result.ColumnTypes()
 				if err != nil {
@@ -259,8 +257,18 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 					columnType := v.DatabaseTypeName()
 					switch columnType {
 					case "TEXT", "VARCHAR":
+						if nullable, _ := v.Nullable(); nullable {
+							columnsMap[v.Name()] = new(sql.NullString)
+
+							break
+						}
 						columnsMap[v.Name()] = new(string)
 					case "INT":
+						if nullable, _ := v.Nullable(); nullable {
+							columnsMap[v.Name()] = new(sql.NullInt32)
+
+							break
+						}
 						columnsMap[v.Name()] = new(int32)
 					}
 				}
@@ -285,9 +293,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if exists {
-				log.Println("WWWWWWWWWWWWWWWWwа")
 				ID := strings.Split(reWithID, "/")[2]
-				log.Println("\t\t\t ", ID)
 				for k, v := range data.(map[string]interface{}) {
 					switch v.(type) {
 					case float64:
@@ -304,7 +310,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 						fieldFromDB := columnsMap[k]
 
 						switch fieldFromDB.(type) {
-						case *string:
+						case *string, *sql.NullString:
 							if field == "" {
 								field = "''"
 								f[k] = field
@@ -324,10 +330,25 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 							return
 						}
 					case nil:
-						f[k] = "NULL"
+						fieldFromDB := columnsMap[k]
+
+						switch fieldFromDB.(type) {
+						case *sql.NullString:
+							f[k] = "NULL"
+						case *sql.NullInt32:
+							f[k] = "NULL"
+						default:
+							response, _ := json.Marshal(&Response{
+								"error": "field " + k + " have invalid type",
+							})
+
+							w.WriteHeader(http.StatusBadRequest)
+							w.Write(response)
+
+							return
+						}
 					default:
 						log.Println("default", v, k)
-						log.Printf("%T", k)
 					}
 
 				}
@@ -369,7 +390,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				w.Write(response)
 
-				log.Println(affected)
 				return
 			}
 
@@ -403,7 +423,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 					fieldFromDB := columnsMap[k]
 
 					switch fieldFromDB.(type) {
-					case *string:
+					case *string, *sql.NullString:
 						if field == "" {
 							field = "''"
 							f[k] = field
@@ -412,6 +432,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 						}
 
 						f[k] = "'" + field + "'"
+
 					default:
 						response, _ := json.Marshal(&Response{
 							"error": "field " + k + " have invalid type",
@@ -422,6 +443,25 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 						return
 					}
+				case nil:
+					fieldFromDB := columnsMap[k]
+
+					switch fieldFromDB.(type) {
+					case *sql.NullString:
+						f[k] = "NULL"
+					case *sql.NullInt32:
+						f[k] = "NULL"
+					default:
+						response, _ := json.Marshal(&Response{
+							"error": "field " + k + " have invalid type",
+						})
+
+						w.WriteHeader(http.StatusBadRequest)
+						w.Write(response)
+
+						return
+					}
+
 				default:
 					log.Println("default", v)
 				}
@@ -465,7 +505,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			w.Write(response)
 
-			log.Println(affected)
 			return
 		}
 
