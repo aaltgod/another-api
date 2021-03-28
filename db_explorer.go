@@ -395,29 +395,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 			for k, v := range data.(map[string]interface{}) {
 				switch v.(type) {
-				// case float64:
-				// 	field := int32(v.(float64))
-				// 	fieldFromDB := columnsMap[k]
-
-				// 	switch fieldFromDB.(type) {
-				// 	case *int32:
-				// 		log.Println("TYPES OK")
-
-				// 		f[k] = field
-				// 	default:
-				// 		log.Println("TYPES NOT OK")
-
-				// 		response, _ := json.Marshal(&Response{
-				// 			"error": "field " + k + " have invalid type",
-				// 		})
-
-				// 		w.WriteHeader(http.StatusBadRequest)
-				// 		w.Write(response)
-
-				// 		return
-				// 	}
-
-				// 	log.Printf("%T", field)
 				case string:
 					field := v.(string)
 					fieldFromDB := columnsMap[k]
@@ -521,6 +498,70 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	log.Println("DELETE:", r.URL.Path)
 
+	var (
+		//data    interface{}
+		db      = h.DB
+		reqPath = r.URL.Path
+	)
+
+	tableNames, err := getTableNames(db)
+	if err != nil {
+		log.Println(err)
+		internalServerError(w)
+
+		return
+	}
+
+	reTableName := regexp.MustCompile(`/[\w]*[/?]?`).FindString(reqPath)
+	reWithID := regexp.MustCompile(`/[\w]*/[\d].*`).FindString(reqPath)
+	reqTableName := strings.Trim(reTableName, "/")
+
+	for _, tableName := range tableNames {
+		if tableName == reqTableName {
+			exists, err := regexp.MatchString(`/[\d].*`, reWithID)
+			if err != nil {
+				log.Println(err)
+				internalServerError(w)
+
+				return
+			}
+
+			if exists {
+				ID := strings.Split(reWithID, "/")[2]
+				query := fmt.Sprintf("DELETE FROM %s WHERE id=%s", tableName, ID)
+
+				result, err := db.Exec(query)
+				if err != nil {
+					log.Println(err)
+					internalServerError(w)
+
+					return
+				}
+
+				affected, err := result.RowsAffected()
+				if err != nil {
+					log.Println(err)
+					internalServerError(w)
+
+					return
+				}
+
+				response, _ := json.Marshal(&Response{
+					"response": Response{
+						"deleted": affected,
+					},
+				})
+
+				w.WriteHeader(http.StatusOK)
+				w.Write(response)
+
+				return
+			}
+		}
+
+	}
+
+	log.Println(tableNames, reWithID, reqTableName)
 }
 
 func getTableNames(db *sql.DB) ([]string, error) {
