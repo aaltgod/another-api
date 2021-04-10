@@ -651,6 +651,7 @@ func getDataFromDB(h *Handler, query string) (interface{}, error) {
 				dataMap[v.Name()] = data[i]
 			case "INT":
 				if nullable, _ := v.Nullable(); nullable {
+					log.Println("\t", v.Name())
 					data[i] = new(sql.NullInt32)
 					dataMap[v.Name()] = data[i]
 
