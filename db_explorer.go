@@ -94,14 +94,21 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 				query := fmt.Sprintf("SELECT * FROM %s ", tableName)
 
 				if len(id) > 1 {
-					query += fmt.Sprintf("WHERE id = %s", id[2])
+					query = fmt.Sprintf("SELECT * FROM %s WHERE id = %s", tableName, id[2])
 					data, err := getDataFromDB(h, query)
 					if err != nil {
-						log.Println(err)
-						internalServerError(w)
+						query = fmt.Sprintf("SELECT * FROM %s WHERE user_id = %s", tableName, id[2])
+						log.Println("USER_ID", query)
+						data, err = getDataFromDB(h, query)
+						if err != nil {
+							log.Println(err)
+							internalServerError(w)
 
-						return
+							return
+						}
 					}
+
+					log.Println("\t\t", query)
 
 					if len(data.([]interface{})) > 0 {
 						for _, data := range data.([]interface{}) {
