@@ -250,6 +250,12 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 			columnsMap := make(map[string]interface{})
 
 			result, err := db.Query(query)
+			if err != nil {
+				log.Println(err)
+				internalServerError(w)
+
+				return
+			}
 
 			for result.Next() {
 				columns, err := result.ColumnTypes()
@@ -318,14 +324,15 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 						switch fieldFromDB.(type) {
 						case *string, *sql.NullString:
-							if field == "" {
-								field = "''"
-								f[k] = field
+							// if field == "" {
+							// 	field = "''"
+							// 	f[k] = field
 
-								break
-							}
+							// 	break
+							// }
 
-							f[k] = "'" + field + "'"
+							f[k] = field
+
 						default:
 							response, _ := json.Marshal(&Response{
 								"error": "field " + k + " have invalid type",
@@ -341,7 +348,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 						switch fieldFromDB.(type) {
 						case *sql.NullString:
-							f[k] = "NULL"
+							f[k] = new(sql.NullString)
 						case *sql.NullInt32:
 							f[k] = "NULL"
 						default:
@@ -361,18 +368,32 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 				}
 
 				var (
-					values, fs []string
+					values []interface{}
+					fs     []string
 				)
 
-				for k, v := range f {
+				for k, _ := range f {
 					fs = append(fs, k)
-					values = append(values, fmt.Sprintf("%v", v))
 				}
 
-				query = "UPDATE items set " + strings.Join(fs, "") + "=" + strings.Join(values, "") + " WHERE id=" + ID
-				log.Println(query)
+				query = fmt.Sprintf("UPDATE %s SET ", tableName)
 
-				res, err := db.Exec(query)
+				for i, v := range fs {
+					values = append(values, fmt.Sprintf("%s", f[v]))
+
+					if i == len(fs)-1 {
+						query += fmt.Sprintf("%s = ? ", v)
+
+						break
+					}
+
+					query += fmt.Sprintf("%s = ?, ", v)
+				}
+
+				query += fmt.Sprintf("WHERE id = %s", ID)
+				log.Println(query, values)
+
+				res, err := db.Exec(query, values...)
 				if err != nil {
 					log.Println(err)
 					internalServerError(w)
@@ -408,15 +429,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 					switch fieldFromDB.(type) {
 					case *string, *sql.NullString:
-						if field == "" {
-							field = "''"
-							f[k] = field
-
-							break
-						}
-
-						f[k] = "'" + field + "'"
-
+						f[k] = field
 					default:
 						response, _ := json.Marshal(&Response{
 							"error": "field " + k + " have invalid type",
@@ -432,9 +445,9 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 					switch fieldFromDB.(type) {
 					case *sql.NullString:
-						f[k] = "NULL"
+						f[k] = new(sql.NullString)
 					case *sql.NullInt32:
-						f[k] = "NULL"
+						f[k] = new(sql.NullInt32)
 					default:
 						response, _ := json.Marshal(&Response{
 							"error": "field " + k + " have invalid type",
@@ -453,18 +466,21 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 
 			var (
-				values, fs []string
+				values     []interface{}
+				params, fs []string
 			)
 
 			for k, v := range f {
 				fs = append(fs, k)
-				values = append(values, fmt.Sprintf("%v", v))
+				params = append(params, "?")
+				values = append(values, fmt.Sprintf("%s", v))
 			}
 
-			query = "INSERT INTO items (" + strings.Join(fs, ", ") + ") VALUES (" + strings.Join(values, ", ") + ")"
+			query = fmt.Sprintf("INSERT INTO %s (", tableName) +
+				strings.Join(fs, ", ") + ") VALUES (" + strings.Join(params, ", ") + ")"
 			log.Println(query)
 
-			res, err := db.Exec(query)
+			res, err := db.Exec(query, values...)
 			if err != nil {
 				log.Println(err)
 				internalServerError(w)
@@ -658,7 +674,6 @@ func getDataFromDB(h *Handler, query string) (interface{}, error) {
 				dataMap[v.Name()] = data[i]
 			case "INT":
 				if nullable, _ := v.Nullable(); nullable {
-					log.Println("\t", v.Name())
 					data[i] = new(sql.NullInt32)
 					dataMap[v.Name()] = data[i]
 
