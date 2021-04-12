@@ -98,7 +98,7 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 					data, err := getDataFromDB(h, query)
 					if err != nil {
 						query = fmt.Sprintf("SELECT * FROM %s WHERE user_id = %s", tableName, id[2])
-						log.Println("USER_ID", query)
+
 						data, err = getDataFromDB(h, query)
 						if err != nil {
 							log.Println(err)
@@ -107,8 +107,6 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 							return
 						}
 					}
-
-					log.Println("\t\t", query)
 
 					if len(data.([]interface{})) > 0 {
 						for _, data := range data.([]interface{}) {
@@ -324,15 +322,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 						switch fieldFromDB.(type) {
 						case *string, *sql.NullString:
-							// if field == "" {
-							// 	field = "''"
-							// 	f[k] = field
-
-							// 	break
-							// }
-
 							f[k] = field
-
 						default:
 							response, _ := json.Marshal(&Response{
 								"error": "field " + k + " have invalid type",
@@ -348,9 +338,9 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 						switch fieldFromDB.(type) {
 						case *sql.NullString:
-							f[k] = new(sql.NullString)
+							f[k] = sql.NullString{}
 						case *sql.NullInt32:
-							f[k] = "NULL"
+							f[k] = sql.NullInt32{}
 						default:
 							response, _ := json.Marshal(&Response{
 								"error": "field " + k + " have invalid type",
@@ -379,7 +369,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 				query = fmt.Sprintf("UPDATE %s SET ", tableName)
 
 				for i, v := range fs {
-					values = append(values, fmt.Sprintf("%s", f[v]))
+					values = append(values, f[v])
 
 					if i == len(fs)-1 {
 						query += fmt.Sprintf("%s = ? ", v)
@@ -390,15 +380,15 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 					query += fmt.Sprintf("%s = ?, ", v)
 				}
 
-				query += fmt.Sprintf("WHERE id = %s", ID)
-				log.Println(query, values)
-
-				res, err := db.Exec(query, values...)
+				res, err := db.Exec(query+fmt.Sprintf("WHERE id = %s", ID), values...)
 				if err != nil {
-					log.Println(err)
-					internalServerError(w)
+					res, err = db.Exec(query+fmt.Sprintf("WHERE user_id = %s", ID), values...)
+					if err != nil {
+						log.Println(err)
+						internalServerError(w)
 
-					return
+						return
+					}
 				}
 
 				affected, err := res.RowsAffected()
@@ -445,9 +435,9 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 					switch fieldFromDB.(type) {
 					case *sql.NullString:
-						f[k] = new(sql.NullString)
+						f[k] = sql.NullString{}
 					case *sql.NullInt32:
-						f[k] = new(sql.NullInt32)
+						f[k] = sql.NullInt32{}
 					default:
 						response, _ := json.Marshal(&Response{
 							"error": "field " + k + " have invalid type",
@@ -522,7 +512,6 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	log.Println("DELETE:", r.URL.Path)
 
 	var (
-		//data    interface{}
 		db      = h.DB
 		reqPath = r.URL.Path
 	)
