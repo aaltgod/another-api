@@ -24,6 +24,61 @@ type DB struct {
 
 type Response map[string]interface{}
 
+type Columns struct {
+	MetaData       map[string]interface{}
+	NamesWithTypes map[string]interface{}
+	IDNameColumn   string
+}
+
+func NewQuery(db *sql.DB, query string) (Columns, error) {
+	columns := Columns{}
+	columns.MetaData = make(map[string]interface{})
+	columns.NamesWithTypes = make(map[string]interface{})
+
+	result, err := db.Query(query)
+	if err != nil {
+		log.Println(err)
+
+		return Columns{}, err
+	}
+
+	for result.Next() {
+		cols, err := result.ColumnTypes()
+		if err != nil {
+			log.Println(err)
+
+			return Columns{}, err
+		}
+
+		for _, v := range cols {
+			columnType := v.DatabaseTypeName()
+			switch columnType {
+			case "TEXT", "VARCHAR":
+				if nullable, _ := v.Nullable(); nullable {
+					columns.MetaData[v.Name()] = new(sql.NullString)
+
+					break
+				}
+				columns.MetaData[v.Name()] = new(string)
+				columns.NamesWithTypes[v.Name()] = ""
+			case "INT":
+				columns.IDNameColumn = v.Name()
+				if nullable, _ := v.Nullable(); nullable {
+					columns.MetaData[v.Name()] = new(sql.NullInt32)
+
+					break
+				}
+				columns.MetaData[v.Name()] = new(int32)
+			}
+		}
+	}
+
+	result.Close()
+
+	return columns, nil
+
+}
+
 func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 
 	testHandler := &Handler{DB: db}
@@ -87,25 +142,29 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 		reTableName := regexp.MustCompile(`/[\w]*[/?]?`).FindString(reqTableName)
 		reWithID := regexp.MustCompile(`/[\w]*/[\d]*`).FindString(reqTableName)
 		reqTableName = strings.Trim(reTableName, "/")
-		id := strings.Split(reWithID, "/")
+		ID := strings.Split(reWithID, "/")
 
 		for _, tableName := range tableNames {
 			if tableName == reqTableName {
 				query := fmt.Sprintf("SELECT * FROM %s ", tableName)
+				columns, err := NewQuery(db, query)
+				if err != nil {
+					log.Println(err)
+					internalServerError(w)
 
-				if len(id) > 1 {
-					query = fmt.Sprintf("SELECT * FROM %s WHERE id = %s", tableName, id[2])
+					return
+				}
+
+				if len(ID) > 1 {
+					query = fmt.Sprintf(
+						"SELECT * FROM %s WHERE %s = %s",
+						tableName, columns.IDNameColumn, ID[2])
 					data, err := getDataFromDB(h, query)
 					if err != nil {
-						query = fmt.Sprintf("SELECT * FROM %s WHERE user_id = %s", tableName, id[2])
+						log.Println(err)
+						internalServerError(w)
 
-						data, err = getDataFromDB(h, query)
-						if err != nil {
-							log.Println(err)
-							internalServerError(w)
-
-							return
-						}
+						return
 					}
 
 					if len(data.([]interface{})) > 0 {
@@ -143,13 +202,11 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 						param, err := strconv.Atoi(r.FormValue("offset"))
 						if err != nil {
 							offset := 0
-							query += fmt.Sprintf("WHERE id > %d ", offset)
-
-							break
+							query += fmt.Sprintf("WHERE %s > %d ", columns.IDNameColumn, offset)
+						} else {
+							offset := param
+							query += fmt.Sprintf("WHERE %s > %d ", columns.IDNameColumn, offset)
 						}
-
-						offset := param
-						query += fmt.Sprintf("WHERE id > %d ", offset)
 					}
 
 					if isExistsParam(r, "limit") {
@@ -157,12 +214,10 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 						if err != nil {
 							limit := 5
 							query += fmt.Sprintf("LIMIT %d", limit)
-
-							break
+						} else {
+							limit := param
+							query += fmt.Sprintf("LIMIT %d", limit)
 						}
-
-						limit := param
-						query += fmt.Sprintf("LIMIT %d", limit)
 					}
 
 					data, err := getDataFromDB(h, query)
@@ -224,7 +279,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reTableName := regexp.MustCompile(`/[\w]*[/?]?`).FindString(reqPath)
-	reWithID := regexp.MustCompile(`/[\w]*/[\d].*`).FindString(reqPath)
+	reWithID := regexp.MustCompile(`/[\w]*/[\d]*`).FindString(reqPath)
 	reqTableName := strings.Trim(reTableName, "/")
 
 	for _, tableName := range tableNames {
@@ -245,48 +300,14 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 
 			query := fmt.Sprintf("SELECT * FROM %s", tableName)
-			columnsMap := make(map[string]interface{})
 
-			result, err := db.Query(query)
+			columns, err := NewQuery(db, query)
 			if err != nil {
 				log.Println(err)
 				internalServerError(w)
 
 				return
 			}
-
-			for result.Next() {
-				columns, err := result.ColumnTypes()
-				if err != nil {
-					log.Println(err)
-					internalServerError(w)
-
-					return
-				}
-
-				for _, v := range columns {
-					columnType := v.DatabaseTypeName()
-					switch columnType {
-					case "TEXT", "VARCHAR":
-						if nullable, _ := v.Nullable(); nullable {
-							columnsMap[v.Name()] = new(sql.NullString)
-
-							break
-						}
-						columnsMap[v.Name()] = new(string)
-					case "INT":
-						if nullable, _ := v.Nullable(); nullable {
-							columnsMap[v.Name()] = new(sql.NullInt32)
-
-							break
-						}
-						columnsMap[v.Name()] = new(int32)
-					}
-				}
-
-			}
-
-			result.Close()
 
 			var Fields struct {
 				fields map[string]interface{}
@@ -318,7 +339,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 						return
 					case string:
 						field := v.(string)
-						fieldFromDB := columnsMap[k]
+						fieldFromDB := columns.MetaData[k]
 
 						switch fieldFromDB.(type) {
 						case *string, *sql.NullString:
@@ -334,7 +355,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 							return
 						}
 					case nil:
-						fieldFromDB := columnsMap[k]
+						fieldFromDB := columns.MetaData[k]
 
 						switch fieldFromDB.(type) {
 						case *sql.NullString:
@@ -380,15 +401,12 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 					query += fmt.Sprintf("%s = ?, ", v)
 				}
 
-				res, err := db.Exec(query+fmt.Sprintf("WHERE id = %s", ID), values...)
+				res, err := db.Exec(query+fmt.Sprintf("WHERE %s = %s", columns.IDNameColumn, ID), values...)
 				if err != nil {
-					res, err = db.Exec(query+fmt.Sprintf("WHERE user_id = %s", ID), values...)
-					if err != nil {
-						log.Println(err)
-						internalServerError(w)
+					log.Println(err)
+					internalServerError(w)
 
-						return
-					}
+					return
 				}
 
 				affected, err := res.RowsAffected()
@@ -415,29 +433,31 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 				switch v.(type) {
 				case string:
 					field := v.(string)
-					fieldFromDB := columnsMap[k]
+					fieldFromDB, exists := columns.MetaData[k]
+					if exists {
+						switch fieldFromDB.(type) {
+						case *string, *sql.NullString:
+							columns.NamesWithTypes[k] = field
+						default:
+							log.Println(field)
+							response, _ := json.Marshal(&Response{
+								"error": "field " + k + " have invalid type",
+							})
 
-					switch fieldFromDB.(type) {
-					case *string, *sql.NullString:
-						f[k] = field
-					default:
-						response, _ := json.Marshal(&Response{
-							"error": "field " + k + " have invalid type",
-						})
+							w.WriteHeader(http.StatusBadRequest)
+							w.Write(response)
 
-						w.WriteHeader(http.StatusBadRequest)
-						w.Write(response)
-
-						return
+							return
+						}
 					}
 				case nil:
-					fieldFromDB := columnsMap[k]
+					fieldFromDB := columns.MetaData[k]
 
 					switch fieldFromDB.(type) {
 					case *sql.NullString:
-						f[k] = sql.NullString{}
+						columns.NamesWithTypes[k] = sql.NullString{}
 					case *sql.NullInt32:
-						f[k] = sql.NullInt32{}
+						columns.NamesWithTypes[k] = sql.NullInt32{}
 					default:
 						response, _ := json.Marshal(&Response{
 							"error": "field " + k + " have invalid type",
@@ -460,7 +480,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 				params, fs []string
 			)
 
-			for k, v := range f {
+			for k, v := range columns.NamesWithTypes {
 				fs = append(fs, k)
 				params = append(params, "?")
 				values = append(values, fmt.Sprintf("%s", v))
@@ -468,7 +488,6 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 			query = fmt.Sprintf("INSERT INTO %s (", tableName) +
 				strings.Join(fs, ", ") + ") VALUES (" + strings.Join(params, ", ") + ")"
-			log.Println(query)
 
 			res, err := db.Exec(query, values...)
 			if err != nil {
@@ -488,7 +507,7 @@ func (h *Handler) CreateAndUpdate(w http.ResponseWriter, r *http.Request) {
 
 			response, _ := json.Marshal(&Response{
 				"response": Response{
-					"id": affected,
+					columns.IDNameColumn: affected,
 				},
 			})
 
@@ -570,10 +589,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-
 	}
-
-	log.Println(tableNames, reWithID, reqTableName)
 }
 
 func getTableNames(db *sql.DB) ([]string, error) {
@@ -608,8 +624,6 @@ func internalServerError(w http.ResponseWriter) {
 
 	w.WriteHeader(http.StatusInternalServerError)
 	w.Write(response)
-
-	return
 }
 
 func isExistsParam(r *http.Request, key string) bool {
